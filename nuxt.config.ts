@@ -9,4 +9,17 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
     }
   },
+  app: {
+    head: {
+      charset: 'utf-8',
+      viewport: 'width=device-width, initial-scale=1',
+      title: 'FireWolf',
+      meta: [
+        { name: 'description', content: 'A real-time fire monitoring and warning system for Data Centers.' }
+      ],
+      link: [
+        { rel: 'icon', type: 'image/png', href: 'https://res.cloudinary.com/dbonwxmgl/image/upload/v1744813436/nincpcscjdqufgdfunit.png' }
+      ]
+    }
+  }
 })

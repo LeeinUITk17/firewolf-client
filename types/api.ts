@@ -32,15 +32,20 @@ export interface Zone {
     latitude?: number | null;
     longitude?: number | null;
     createdAt: string | Date;
+    sensors?: Sensor[];
+    cameras?: Camera[];
+    _count?: { sensors?: number; cameras?: number };
 }
+
 export interface SensorLog {
     id: string;
     sensorId: string;
     temperature?: number | null;
     humidity?: number | null;
     createdAt: string | Date;
-    sensor?: Sensor; // Optional relation back
+    sensor?: Sensor;
 }
+
 export interface Sensor {
     id: string;
     name: string;
@@ -53,16 +58,11 @@ export interface Sensor {
     zoneId: string;
     zone?: Zone;
     latestLog?: SensorLog | null;
+    activeAlert?: Alert | null;
+    logs?: SensorLog[];
 }
 
-export interface User {
-    id: string;
-    name: string;
-    email: string;
-    phone: string;
-    role: Role;
-    isActive: boolean;
-}
+export interface User {}
 
 export interface Camera {
     id: string;
@@ -84,24 +84,39 @@ export interface Alert {
     createdAt: string | Date;
     status: AlertStatus;
     viaEmail: boolean;
-    sensor?: Sensor;
+    sensor?: Sensor & { zone?: Zone };
     user?: User;
     camera?: Camera;
 }
 
-export interface AlertWithRelations extends Alert {
-    sensor?: Sensor & {
-        zone?: Zone;
-    };
+export interface ZoneWithDetails extends Zone {
+    sensors?: Sensor[];
+    cameras?: Camera[];
 }
 
 export interface SensorWithDetails extends Sensor {
     zone?: Zone;
+    logs?: SensorLog[];
     latestLog?: SensorLog | null;
+    activeAlert?: Alert | null;
 }
 
+export interface CameraWithDetails extends Camera {
+    zone?: Zone;
+}
+
+export interface AlertWithDetails extends Alert {
+    sensor?: Sensor & { zone?: Zone };
+    user?: User;
+    camera?: Camera & { zone?: Zone };
+}
 
 export interface PaginatedResponse<T> {
     data: T[];
     total: number;
+}
+export interface AlertWithRelations extends Alert {
+    sensor?: Sensor & {
+        zone?: Zone;
+    };
 }

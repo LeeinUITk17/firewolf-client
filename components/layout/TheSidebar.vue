@@ -88,8 +88,8 @@ const navigation = [
 
 const adminNavigation = [
     { name: 'Manage Alerts', href: '/alerts', icon: FolderIcon, activePath: '/alerts' },
-    { name: 'Manage Sensors', href: '/sensors/config', icon: Cog6ToothIcon },
-    { name: 'Manage Cameras', href: '/cameras/config', icon: VideoCameraIcon },
+    { name: 'Manage Sensors', href: '/sensors', icon: Cog6ToothIcon },
+    { name: 'Manage Cameras', href: '/cameras', icon: VideoCameraIcon },
     { name: 'Manage Zones', href: '/zones', icon: MapPinIcon },
     { name: 'Manage Users', href: '/users', icon: UsersIcon }
 ];
