@@ -1,7 +1,7 @@
 import { defineNuxtPlugin } from '#app';
 import { $fetch } from 'ofetch';
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin((nuxtApp) => {
     const config = useRuntimeConfig();
 
     const apiFetch = $fetch.create({
@@ -11,4 +11,6 @@ export default defineNuxtPlugin(() => {
             console.error('[API Fetch Error]', request, response.status, response.body);
         },
     });
+
+    nuxtApp.provide('api', apiFetch);
 });

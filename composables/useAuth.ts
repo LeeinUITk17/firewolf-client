@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue';
-import { navigateTo } from '#app';
+import { navigateTo, useNuxtApp, useState } from '#app';
 
 interface AuthUser {
     id: string;
@@ -10,22 +10,18 @@ interface AuthUser {
 
 export const useAuth = () => {
     const user = useState<AuthUser | null>('user', () => null);
+    const { $api } = useNuxtApp();
+
     const isAuthenticated = computed(() => !!user.value);
     const isAdmin = computed(() => user.value?.role === 'ADMIN');
-    const apiBase = useRuntimeConfig().public.apiBase;
 
     const fetchUser = async () => {
         try {
-            const fetchedUser = await $fetch<AuthUser>(`${apiBase}/auth/profile`, {
+            const fetchedUser = await $api<AuthUser>('/auth/profile', {
                 method: 'GET',
                 ignoreResponseError: true,
             });
-
-            if (fetchedUser && fetchedUser.id) {
-                user.value = fetchedUser;
-            } else {
-                user.value = null;
-            }
+            user.value = fetchedUser && fetchedUser.id ? fetchedUser : null;
         } catch (error: any) {
             user.value = null;
         }
@@ -34,7 +30,7 @@ export const useAuth = () => {
     const login = async (credentials: { identifier: string; password: string }) => {
         const loginData = { email: credentials.identifier, password: credentials.password };
         try {
-            await $fetch<{ message: string }>(`${apiBase}/auth/login`, {
+            await $api<{ message: string }>('/auth/login', {
                 method: 'POST',
                 body: loginData,
             });
@@ -42,41 +38,34 @@ export const useAuth = () => {
             return { success: true };
         } catch (error: any) {
             user.value = null;
-            return { success: false, error: error?.data?.message || 'Login failed. Please try again.' };
+            return { success: false, error: error?.data?.message || 'Login failed.' };
         }
     };
 
     const signup = async (signupData: { name: string; email: string; password: string; phone?: string }) => {
         try {
-            await $fetch<{ message: string }>(`${apiBase}/auth/signup`, {
+            await $api<{ message: string }>('/auth/signup', {
                 method: 'POST',
                 body: signupData,
             });
             await fetchUser();
             return { success: true };
         } catch (error: any) {
-            return { success: false, error: error?.data?.message || 'Signup failed. Please try again.' };
+            return { success: false, error: error?.data?.message || 'Signup failed.' };
         }
     };
 
     const logout = async () => {
         try {
-            await $fetch<{ message: string }>(`${apiBase}/auth/logout`, {
+            await $api<{ message: string }>('/auth/logout', {
                 method: 'POST',
             });
         } catch (error) {
+            console.error(error);
         } finally {
             user.value = null;
         }
     };
 
-    return {
-        user,
-        isAuthenticated,
-        isAdmin,
-        login,
-        signup,
-        logout,
-        fetchUser,
-    };
+    return { user, isAuthenticated, isAdmin, login, signup, logout, fetchUser };
 };
