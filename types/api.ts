@@ -37,6 +37,24 @@ export interface Zone {
     _count?: { sensors?: number; cameras?: number };
 }
 
+export interface SensorWithOptionalZone {
+    id: string;
+    name: string;
+    type: string;
+    location: string;
+    threshold?: number | null;
+    sensitivity?: number | null;
+    status: SensorStatus;
+    createdAt: string | Date;
+    zoneId: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    zone?: Zone;
+    latestLog?: { temperature?: number | null, humidity?: number | null, createdAt: Date | string } | null;
+    activeAlert?: Alert | null;
+    logs?: SensorLog[];
+}
+
 export interface SensorLog {
     id: string;
     sensorId: string;
@@ -122,5 +140,20 @@ export interface PaginatedResponse<T> {
 export interface AlertWithRelations extends Alert {
     sensor?: Sensor & {
         zone?: Zone;
+    };
+}
+export interface CameraWithOptionalZone {
+    id: string;
+    name: string;
+    url: string;
+    createdAt: string | Date;
+    zoneId: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    zone?: { name?: string }; // Custom definition
+}
+export interface AlertWithSensorZone extends Alert {
+    sensor?: Sensor & {
+        zone?: { name?: string };
     };
 }

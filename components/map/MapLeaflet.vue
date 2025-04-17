@@ -3,9 +3,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, defineProps, defineEmits, nextTick } from 'vue';
-import L, { type Map, type Marker, type LayerGroup, type CircleMarker, type DivIcon } from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { ref, onMounted, onUnmounted, watch, defineProps, defineEmits, nextTick, defineExpose } from 'vue';
+import type { Map, Marker, LayerGroup, CircleMarker, DivIcon, LatLngExpression } from 'leaflet';
 import { type Sensor, type Camera, type Alert, SensorStatus } from '~/types/api';
 
 const props = defineProps({
@@ -28,6 +27,10 @@ const props = defineProps({
     initialZoom: {
         type: Number,
         default: 15
+    },
+    selectedItemId: {
+        type: String as () => string | null,
+        default: null
     }
 });
 
@@ -38,29 +41,42 @@ let mapInstance: Map | null = null;
 let sensorMarkersLayer: LayerGroup | null = null;
 let cameraMarkersLayer: LayerGroup | null = null;
 let alertPulseLayer: LayerGroup | null = null;
+let L: any = null;
 
-onMounted(async () => {
-    if (process.client && mapContainer.value) {
-        await nextTick();
+const initializeMap = () => {
+    if (!L || !mapContainer.value || mapInstance) return;
 
-        if (!mapInstance) {
-            mapInstance = L.map(mapContainer.value, {
-                zoomControl: false
-            }).setView(props.initialCenter, props.initialZoom);
+    try {
+        mapInstance = L.map(mapContainer.value, { zoomControl: false }).setView(props.initialCenter, props.initialZoom);
 
-            L.control.zoom({ position: 'topright' }).addTo(mapInstance);
+        L.control.zoom({ position: 'topright' }).addTo(mapInstance);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(mapInstance);
 
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                maxZoom: 19
-            }).addTo(mapInstance);
-
-            sensorMarkersLayer = L.layerGroup().addTo(mapInstance);
-            cameraMarkersLayer = L.layerGroup().addTo(mapInstance);
-            alertPulseLayer = L.layerGroup().addTo(mapInstance);
-        }
+        sensorMarkersLayer = L.layerGroup().addTo(mapInstance);
+        cameraMarkersLayer = L.layerGroup().addTo(mapInstance);
+        alertPulseLayer = L.layerGroup().addTo(mapInstance);
 
         updateMarkers();
+        exposedMapInstance.value = mapInstance;
+    } catch (error) {
+        console.error('Error initializing Leaflet map:', error);
+    }
+};
+
+onMounted(async () => {
+    if (process.client) {
+        try {
+            const leaflet = await import('leaflet');
+            L = leaflet.default;
+            await import('leaflet/dist/leaflet.css');
+            await nextTick();
+            initializeMap();
+        } catch (error) {
+            console.error('Failed to load Leaflet dynamically:', error);
+        }
     }
 });
 
@@ -68,14 +84,21 @@ onUnmounted(() => {
     if (mapInstance) {
         mapInstance.remove();
         mapInstance = null;
+        exposedMapInstance.value = null;
     }
 });
 
 watch(() => [props.sensors, props.cameras, props.activeAlerts], () => {
-    if (mapInstance) {
+    if (mapInstance && L) {
         updateMarkers();
     }
 }, { deep: true });
+
+watch(() => props.selectedItemId, (newId, oldId) => {
+    if (mapInstance && L) {
+        console.log(`Selected item changed to: ${newId}`);
+    }
+});
 
 const updateMarkers = () => {
     if (!mapInstance || !sensorMarkersLayer || !cameraMarkersLayer || !alertPulseLayer) return;
@@ -95,7 +118,8 @@ const updateMarkers = () => {
                 color: isAlerting ? '#FFFFFF' : '#2d3748',
                 weight: isAlerting ? 2 : 1,
                 opacity: 1,
-                fillOpacity: isAlerting ? 0.9 : 0.75
+                fillOpacity: isAlerting ? 0.9 : 0.75,
+                itemId: sensor.id,
             })
                 .bindPopup(generateSensorPopupContent(sensor, isAlerting))
                 .on('click', () => {
@@ -128,7 +152,8 @@ const updateMarkers = () => {
 
             const marker = L.marker([camera.latitude, camera.longitude], {
                 icon: cameraIcon,
-                title: camera.name
+                title: camera.name,
+                itemId: camera.id,
             })
                 .bindPopup(generateCameraPopupContent(camera))
                 .on('click', () => {
@@ -153,7 +178,6 @@ const generateSensorPopupContent = (sensor: Sensor, isAlerting: boolean): string
         }
         content += `<div class="text-gray-500 text-[10px] mt-1">Last Log: ${formatDateTime(sensor.latestLog.createdAt)}</div>`;
     }
-
     if (isAlerting) {
         content += `<div class="mt-1 p-1 bg-red-100 border border-red-300 rounded text-red-700 font-bold">ALERTING!</div>`;
     }
@@ -182,7 +206,6 @@ const getSensorColor = (status: SensorStatus, isAlerting: boolean): string => {
 };
 
 const formatStatus = (status: SensorStatus): string => {
-    switch (status) { /* Add logic here */ }
     return status;
 };
 
@@ -196,6 +219,11 @@ const formatDateTime = (dateTimeString: string | Date | undefined | null): strin
         return 'Err';
     }
 };
+
+const exposedMapInstance = ref<Map | null>(null);
+defineExpose({
+    mapInstance: exposedMapInstance
+});
 </script>
 
 <style>
