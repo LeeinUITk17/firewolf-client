@@ -56,6 +56,8 @@ export interface Sensor {
     status: SensorStatus;
     createdAt: string | Date;
     zoneId: string;
+    latitude?: number | null;
+    longitude?: number | null;
     zone?: Zone;
     latestLog?: SensorLog | null;
     activeAlert?: Alert | null;
@@ -70,6 +72,8 @@ export interface Camera {
     url: string;
     createdAt: string | Date;
     zoneId: string;
+    latitude?: number | null;
+    longitude?: number | null;
     zone?: Zone;
 }
 

@@ -2,7 +2,7 @@
     <aside class="w-64 flex-shrink-0 bg-gray-900 text-gray-300 flex flex-col h-screen fixed left-0 top-0 z-10">
         <div class="h-16 flex items-center justify-center px-4 border-b border-gray-700 flex-shrink-0">
             <NuxtLink to="/dashboard" class="flex items-center space-x-2">
-                <FireIcon class="h-8 w-8 text-orange-500" />
+                <img src="https://res.cloudinary.com/dbonwxmgl/image/upload/v1744813436/nincpcscjdqufgdfunit.png" alt="FireWolf Logo" class="h-8 w-8" />
                 <span class="text-xl font-bold text-white">FireWolf</span>
             </NuxtLink>
         </div>

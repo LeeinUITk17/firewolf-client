@@ -2,20 +2,23 @@
     <div>
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-semibold text-white">System Overview</h1>
-            <button @click="fetchDashboardData" :disabled="loading" title="Refresh Data"
-                            class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                <ArrowPathIcon class="h-5 w-5" :class="{'animate-spin': loading}" />
-            </button>
+            <div class="flex items-center space-x-2">
+                <select v-model="selectedSensorId" @change="fetchChartData"
+                        class="py-1 px-2 border border-gray-600 bg-gray-700 text-white text-sm rounded-md focus:outline-none focus:ring-orange-500 focus:border-orange-500 h-9">
+                    <option value="">Select a sensor...</option>
+                    <option v-for="sensor in availableSensors" :key="sensor.id" :value="sensor.id">
+                        {{ sensor.name }}
+                    </option>
+                </select>
+                <button @click="refreshAllData" :disabled="loading || chartLoading" title="Refresh Data"
+                        class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <ArrowPathIcon class="h-5 w-5" :class="{'animate-spin': loading || chartLoading}" />
+                </button>
+            </div>
         </div>
 
-        <div v-if="loading && !initialDataLoaded" class="text-center py-20">
-            <AppSpinner class="w-10 h-10 inline-block" />
-            <p class="text-gray-400 mt-3">Loading dashboard data...</p>
-        </div>
-
-        <div v-if="errorMessage && !loading" class="mb-6 rounded-md bg-red-900 bg-opacity-40 border border-red-700 p-4 text-red-300">
-            {{ errorMessage }}
-        </div>
+        <div v-if="statsLoading && !initialDataLoaded" class="text-center py-10"><AppSpinner /></div>
+        <div v-if="statsError && !statsLoading" class="mb-6 rounded-md bg-red-900/40 border border-red-700/50 p-4 text-red-300">{{ statsError }}</div>
 
         <div v-if="initialDataLoaded" class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <DashboardStatCard
@@ -24,14 +27,10 @@
                 icon-color="text-green-400"
                 icon-bg-color="bg-green-900/30"
                 :border-color="sensorStats.error > 0 ? 'border-yellow-500/60' : 'border-gray-700 hover:border-green-500/50'"
+                :value="`${sensorStats.active} / ${sensorStats.total}`"
             >
-                <template #value>
-                    <div class="text-lg font-medium text-white">
-                        <span :class="{'text-green-400': sensorStats.active === sensorStats.total && sensorStats.total > 0}">
-                            {{ sensorStats.active }}
-                        </span> / {{ sensorStats.total }}
-                    </div>
-                    <div v-if="sensorStats.error > 0 || sensorStats.inactive > 0" class="text-xs mt-1">
+                <template #footer-extra v-if="sensorStats.error > 0 || sensorStats.inactive > 0">
+                    <div class="text-xs mt-1 text-center sm:text-left">
                         <span v-if="sensorStats.error > 0" class="text-yellow-400 mr-2">{{ sensorStats.error }} errors</span>
                         <span v-if="sensorStats.inactive > 0" class="text-gray-500">{{ sensorStats.inactive }} inactive</span>
                     </div>
@@ -40,20 +39,15 @@
 
             <DashboardStatCard
                 title="Pending Alerts"
-                :value="alertStats.pending"
+                :value="alertStats.pending" 
                 :icon="BellAlertIcon"
                 icon-color="text-red-400"
                 icon-bg-color="bg-red-900/30"
                 :border-color="alertStats.pending > 0 ? 'border-red-500 ring-1 ring-red-500/30' : 'border-gray-700 hover:border-orange-500/50'"
                 link="/alerts?status=PENDING"
                 link-text="View Alerts"
-            >
-                <template #value>
-                    <div class="text-lg font-medium" :class="alertStats.pending > 0 ? 'text-red-400' : 'text-white'">
-                        {{ alertStats.pending }}
-                    </div>
-                </template>
-            </DashboardStatCard>
+                :value-class="alertStats.pending > 0 ? 'text-red-400' : 'text-white'"
+            />
 
             <DashboardStatCard
                 title="Total Cameras"
@@ -74,18 +68,19 @@
             />
         </div>
 
-        <div v-if="initialDataLoaded" class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <div class="bg-gray-850 p-4 rounded-lg shadow border border-gray-700 min-h-[300px]">
-                <h3 class="text-lg font-medium text-white mb-4">Temperature Chart (Default Sensor)</h3>
-                <ChartsLineChartPlaceholder v-if="chartLoading" />
-                <div v-else class="flex items-center justify-center h-full text-gray-500">
-                    Temperature chart... (Integration needed)
+        <div v-if="initialDataLoaded" class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-1 xl:grid-cols-3">
+            <div class="bg-gray-850 p-4 rounded-lg shadow border border-gray-700 min-h-[350px] xl:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-medium text-white">
+                        Chart {{ selectedSensorName || 'Temperature & Humidity' }}
+                    </h3>
                 </div>
+                <ChartsLineChart :chart-data="chartData" :loading="chartLoading" height="300px"/>
             </div>
 
-            <div class="bg-gray-850 p-4 rounded-lg shadow border border-gray-700 min-h-[300px]">
+            <div class="bg-gray-850 p-4 rounded-lg shadow border border-gray-700 min-h-[350px]">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-medium text-white">Recent Alerts (Pending)</h3>
+                    <h3 class="text-lg font-medium text-white">Recent Alerts</h3>
                     <NuxtLink to="/alerts" class="text-sm text-orange-400 hover:underline">View All</NuxtLink>
                 </div>
                 <AlertsRecentAlertsList :alerts="recentAlerts" :loading="recentAlertsLoading" />
@@ -95,44 +90,47 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, reactive, computed } from 'vue';
 import { useNuxtApp } from '#app';
 import type { $Fetch } from 'ofetch';
 import DashboardStatCard from '~/components/dashboard/StatCard.vue';
-import ChartsLineChartPlaceholder from '~/components/charts/LineChartPlaceholder.vue';
+import ChartsLineChart from '~/components/charts/LineChart.vue';
 import AlertsRecentAlertsList from '~/components/alerts/RecentAlertsList.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
-import {
-    BeakerIcon, BellAlertIcon, VideoCameraIcon, ArrowPathIcon, ChartBarIcon
-} from '@heroicons/vue/24/outline';
-import type { AlertWithRelations } from '~/types/api';
+import { BeakerIcon, BellAlertIcon, VideoCameraIcon, ArrowPathIcon, ChartBarIcon } from '@heroicons/vue/24/outline';
+import type { AlertWithRelations, Sensor } from '~/types/api';
+import type { ChartData } from 'chart.js';
 
-definePageMeta({
-    layout: 'default',
-    middleware: 'auth'
-});
+definePageMeta({ layout: 'default', middleware: 'auth' });
 
-const nuxtApp = useNuxtApp()
+const nuxtApp = useNuxtApp();
 const $api = nuxtApp.$api as $Fetch;
-const loading = ref(true);
-const initialDataLoaded = ref(false);
-const errorMessage = ref<string | null>(null);
 
+const statsLoading = ref(true);
+const loading = ref(false); 
+const initialDataLoaded = ref(false);
+const statsError = ref<string | null>(null);
 const sensorStats = reactive({ total: 0, active: 0, inactive: 0, error: 0 });
-const alertStats = reactive({ pending: 0, resolvedToday: 0, totalToday: 0 });
+const alertStats = reactive({ pending: 0 });
 const cameraStats = reactive({ total: 0 });
 const avgTemp = ref<number | null>(null);
-
 const chartLoading = ref(false);
+const availableSensors = ref<Pick<Sensor, 'id' | 'name'>[]>([]);
+const selectedSensorId = ref<string>('');
+const chartData = ref<ChartData<'line'> | null>(null);
 const recentAlertsLoading = ref(false);
 const recentAlerts = ref<AlertWithRelations[]>([]);
 
-const fetchDashboardData = async () => {
-    loading.value = true;
-    errorMessage.value = null;
+const selectedSensorName = computed(() => {
+    return availableSensors.value.find(s => s.id === selectedSensorId.value)?.name || '';
+});
 
+const fetchStatsAndRecent = async () => {
+    statsLoading.value = true;
+    statsError.value = null;
+    recentAlertsLoading.value = true;
     try {
-        const results = await Promise.allSettled([
+        const [sensorsStatRes, alertsStatRes, camerasStatRes, avgTempRes, recentAlertsRes] = await Promise.allSettled([
             $api<{ total: number; active: number; inactive: number; error: number }>('/sensors/stats'),
             $api<{ pending: number; resolvedToday?: number; totalToday?: number }>('/alerts/stats'),
             $api<{ total: number }>('/cameras/stats'),
@@ -140,18 +138,16 @@ const fetchDashboardData = async () => {
             $api<AlertWithRelations[]>('/alerts', { params: { limit: 5, status: 'PENDING', sortBy: 'createdAt', sortOrder: 'desc' } })
         ]);
 
-        const [sensorsRes, alertsRes, camerasRes, avgTempRes, recentAlertsRes] = results;
-
-        if (sensorsRes.status === 'fulfilled' && sensorsRes.value) {
-            Object.assign(sensorStats, sensorsRes.value);
+        if (sensorsStatRes.status === 'fulfilled' && sensorsStatRes.value) {
+            Object.assign(sensorStats, sensorsStatRes.value);
         }
 
-        if (alertsRes.status === 'fulfilled' && alertsRes.value) {
-            Object.assign(alertStats, alertsRes.value);
+        if (alertsStatRes.status === 'fulfilled' && alertsStatRes.value) {
+            Object.assign(alertStats, alertsStatRes.value);
         }
 
-        if (camerasRes.status === 'fulfilled' && camerasRes.value) {
-            Object.assign(cameraStats, camerasRes.value);
+        if (camerasStatRes.status === 'fulfilled' && camerasStatRes.value) {
+            Object.assign(cameraStats, camerasStatRes.value);
         }
 
         if (avgTempRes.status === 'fulfilled' && avgTempRes.value) {
@@ -159,37 +155,105 @@ const fetchDashboardData = async () => {
         }
 
         if (recentAlertsRes.status === 'fulfilled' && recentAlertsRes.value) {
-            recentAlerts.value = recentAlertsRes.value;
-        } else {
-            recentAlerts.value = [];
+            const alertsData = Array.isArray(recentAlertsRes.value) 
+                ? recentAlertsRes.value 
+                : (recentAlertsRes.value as { data: AlertWithRelations[] }).data;
+            recentAlerts.value = alertsData || [];
         }
 
-        if (results.slice(0, 4).some(res => res.status === 'rejected')) {
-            errorMessage.value = "Failed to load all statistics.";
+        if ([sensorsStatRes, alertsStatRes, camerasStatRes, avgTempRes].some(r => r.status === 'rejected')) {
+            statsError.value = "Unable to load all statistics.";
         }
-
         initialDataLoaded.value = true;
-    } catch (error: any) {
-        errorMessage.value = 'An unexpected error occurred while loading dashboard data.';
+
+    } catch {
+        statsError.value = 'An unexpected error occurred while loading dashboard data.';
     } finally {
-        loading.value = false;
+        statsLoading.value = false;
+        recentAlertsLoading.value = false;
+    }
+};
+
+const fetchAvailableSensors = async () => {
+    try {
+        const sensorsList = await $api<Pick<Sensor, 'id' | 'name'>[]>('/sensors', {
+            params: { fields: 'id,name' }
+        });
+        availableSensors.value = sensorsList || [];
+        if (availableSensors.value.length > 0 && !selectedSensorId.value) {
+            selectedSensorId.value = availableSensors.value[0].id;
+            fetchChartData();
+        }
+    } catch {
+        availableSensors.value = [];
     }
 };
 
 const fetchChartData = async () => {
+    if (!selectedSensorId.value) {
+        chartData.value = { datasets: [] };
+        return;
+    }
     chartLoading.value = true;
     try {
-        await new Promise(resolve => setTimeout(resolve, 1200));
-    } catch (error) {
-        console.error("Failed to fetch chart data:", error);
+        const response = await $api<Record<string, { timestamp: string | Date; temperature: number | null; humidity: number | null }[]>>('/logs/chart', {
+            params: { sensorIds: selectedSensorId.value }
+        });
+
+        const sensorData = response[selectedSensorId.value];
+
+        if (sensorData && sensorData.length > 0) {
+            const tempData = sensorData
+                .filter(log => log.temperature !== null)
+                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.temperature as number }));
+
+            const humidityData = sensorData
+                .filter(log => log.humidity !== null)
+                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.humidity as number }));
+
+            chartData.value = {
+                datasets: [
+                    ...(tempData.length > 0 ? [{
+                        label: 'Temperature (°C)',
+                        data: tempData,
+                        borderColor: '#f87171',
+                        backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                        tension: 0.1,
+                        yAxisID: 'y',
+                        pointRadius: 1.5,
+                        pointHoverRadius: 4,
+                    }] : []),
+                    ...(humidityData.length > 0 ? [{
+                        label: 'Humidity (%)',
+                        data: humidityData,
+                        borderColor: '#60a5fa',
+                        backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                        tension: 0.1,
+                        yAxisID: 'y1',
+                        pointRadius: 1.5,
+                        pointHoverRadius: 4,
+                        hidden: false,
+                    }] : [])
+                ]
+            };
+        } else {
+            chartData.value = { datasets: [] };
+        }
+    } catch {
+        chartData.value = { datasets: [] };
     } finally {
         chartLoading.value = false;
     }
 };
 
-onMounted(() => {
-    fetchDashboardData();
+const refreshAllData = () => {
+    fetchStatsAndRecent();
     fetchChartData();
+};
+
+onMounted(() => {
+    fetchStatsAndRecent();
+    fetchAvailableSensors();
 });
 </script>
 
