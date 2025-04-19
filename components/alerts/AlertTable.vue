@@ -61,11 +61,23 @@
                         </a>
                         <span v-else class="text-gray-600">-</span>
                     </td>
-                    <td class="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <NuxtLink :to="`/alerts/${alert.id}`" class="text-orange-500 hover:text-orange-400 mr-3" title="View details">
-                            <EyeIcon class="h-5 w-5 inline-block" />
-                        </NuxtLink>
-                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+            <button @click="$emit('view-details', alert.id)" class="text-orange-500 hover:text-orange-400" title="Xem chi tiết">
+              <EyeIcon class="h-5 w-5 inline-block" />
+            </button>
+            <button
+                v-if="alert.status === AlertStatus.PENDING"
+                @click="$emit('update-status', { id: alert.id, status: AlertStatus.RESOLVED })"
+                class="text-green-500 hover:text-green-400" title="Đánh dấu Đã xử lý">
+              <CheckCircleIcon class="h-5 w-5 inline-block" />
+            </button>
+            <button
+                v-if="alert.status === AlertStatus.PENDING"
+                @click="$emit('update-status', { id: alert.id, status: AlertStatus.IGNORED })"
+                class="text-yellow-500 hover:text-yellow-400" title="Bỏ qua">
+              <ArchiveBoxXMarkIcon class="h-5 w-5 inline-block" />
+            </button>
+          </td>
                 </tr>
             </tbody>
         </table>
@@ -78,6 +90,7 @@ import { EyeIcon, PhotoIcon } from '@heroicons/vue/24/outline';
 import type { AlertWithRelations } from '~/types/api';
 import AlertStatusBadge from './AlertStatusBadge.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
+import { AlertStatus } from '~/types/api';
 
 const props = defineProps({
     alerts: {
@@ -89,6 +102,7 @@ const props = defineProps({
         default: false,
     },
 });
+const emit = defineEmits(['view-details', 'update-status']);
 
 const formatDateTime = (dateTimeString: string | Date): string => {
     if (!dateTimeString) return 'N/A';
