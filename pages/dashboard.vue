@@ -5,10 +5,18 @@
             <div class="flex items-center space-x-2">
                 <select v-model="selectedSensorId" @change="fetchChartData"
                         class="py-1 px-2 border border-gray-600 bg-gray-700 text-white text-sm rounded-md focus:outline-none focus:ring-orange-500 focus:border-orange-500 h-9">
-                    <option value="">Select a sensor...</option>
-                    <option v-for="sensor in availableSensors" :key="sensor.id" :value="sensor.id">
-                        {{ sensor.name }}
-                    </option>
+                    <option value="" disabled>-- Select Sensor --</option>
+                    <optgroup label="Active">
+                        <option v-for="sensor in availableSensors.filter(s => s.status === SensorStatus.ACTIVE)" :key="sensor.id" :value="sensor.id">
+                            {{ sensor.name }}
+                        </option>
+                    </optgroup>
+                    <optgroup label="Others (Inactive, Error...)" v-if="availableSensors.some(s => s.status !== SensorStatus.ACTIVE)">
+                        <option v-for="sensor in availableSensors.filter(s => s.status !== SensorStatus.ACTIVE)" :key="sensor.id" :value="sensor.id" class="text-gray-400">
+                            {{ sensor.name }} ({{ sensor.status }})
+                        </option>
+                    </optgroup>
+                    <option v-if="availableSensors.length === 0" disabled>No sensors available</option>
                 </select>
                 <button @click="refreshAllData" :disabled="loading || chartLoading" title="Refresh Data"
                         class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
@@ -98,7 +106,7 @@ import ChartsLineChart from '~/components/charts/LineChart.vue';
 import AlertsRecentAlertsList from '~/components/alerts/RecentAlertsList.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import { BeakerIcon, BellAlertIcon, VideoCameraIcon, ArrowPathIcon, ChartBarIcon } from '@heroicons/vue/24/outline';
-import type { AlertWithRelations, Sensor } from '~/types/api';
+import { SensorStatus, type AlertWithRelations, type Sensor } from '~/types/api';
 import type { ChartData } from 'chart.js';
 
 definePageMeta({ layout: 'default', middleware: 'auth' });
@@ -115,7 +123,7 @@ const alertStats = reactive({ pending: 0 });
 const cameraStats = reactive({ total: 0 });
 const avgTemp = ref<number | null>(null);
 const chartLoading = ref(false);
-const availableSensors = ref<Pick<Sensor, 'id' | 'name'>[]>([]);
+const availableSensors = ref<Pick<Sensor, 'id' | 'name' | 'status'>[]>([]);
 const selectedSensorId = ref<string>('');
 const chartData = ref<ChartData<'line'> | null>(null);
 const recentAlertsLoading = ref(false);
@@ -176,16 +184,27 @@ const fetchStatsAndRecent = async () => {
 
 const fetchAvailableSensors = async () => {
     try {
-        const sensorsList = await $api<Pick<Sensor, 'id' | 'name'>[]>('/sensors', {
-            params: { fields: 'id,name' }
+        const sensorsList = await $api<Pick<Sensor, 'id' | 'name' | 'status'>[]>('/sensors', {
+            params: { limit: 1000 }
         });
         availableSensors.value = sensorsList || [];
+
         if (availableSensors.value.length > 0 && !selectedSensorId.value) {
-            selectedSensorId.value = availableSensors.value[0].id;
+            const firstActiveSensor = availableSensors.value.find(s => s.status === SensorStatus.ACTIVE);
+            if (firstActiveSensor) {
+                selectedSensorId.value = firstActiveSensor.id;
+            } else {
+                selectedSensorId.value = availableSensors.value[0].id;
+            }
             fetchChartData();
+        } else if (availableSensors.value.length === 0) {
+            selectedSensorId.value = '';
+            chartData.value = { datasets: [] };
         }
     } catch {
         availableSensors.value = [];
+        selectedSensorId.value = '';
+        chartData.value = { datasets: [] };
     }
 };
 
