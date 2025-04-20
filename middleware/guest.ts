@@ -1,11 +1,13 @@
-import { useAuth } from '~/composables/useAuth'; 
+import { useAuth } from '~/composables/useAuth';
+import { useNuxtApp, navigateTo } from '#app';
 
-export default defineNuxtRouteMiddleware((to, from) => {
+export default defineNuxtRouteMiddleware(async (to) => {
+  const nuxtApp = useNuxtApp();
   const { isAuthenticated } = useAuth();
 
+  await nuxtApp.$authPluginInitialized;
+
   if (isAuthenticated.value) {
-    console.log('[Middleware: Guest] Authenticated. Redirecting to /dashboard');
     return navigateTo('/dashboard', { replace: true });
   }
-   console.log('[Middleware: Guest] Not authenticated. Allowing access to', to.path);
 });

@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { navigateTo, useNuxtApp, useState } from '#app';
+import type { $Fetch } from 'ofetch';
 
 interface AuthUser {
     id: string;
@@ -9,25 +10,42 @@ interface AuthUser {
 }
 
 export const useAuth = () => {
-    const user = useState<AuthUser | null>('user', () => null);
-    const { $api } = useNuxtApp();
+    const user = useState<AuthUser | null>('authStateUser', () => null);
+    const nuxtApp = useNuxtApp();
+    const $api = nuxtApp.$api as $Fetch;
 
     const isAuthenticated = computed(() => !!user.value);
     const isAdmin = computed(() => user.value?.role === 'ADMIN');
 
     const fetchUser = async () => {
+        if (!$api) {
+            console.error('[useAuth] $api instance is not available.');
+            user.value = null;
+            return;
+        }
         try {
-            const fetchedUser = await $api<AuthUser>('/auth/profile', {
+            const fetchedUser = await $api<AuthUser | null>('/auth/profile', {
                 method: 'GET',
                 ignoreResponseError: true,
             });
-            user.value = fetchedUser && fetchedUser.id ? fetchedUser : null;
+
+            if (fetchedUser && typeof fetchedUser === 'object' && fetchedUser.id) {
+                user.value = fetchedUser as AuthUser;
+            } else {
+                user.value = null;
+            }
         } catch (error: any) {
+            console.error('[useAuth] fetchUser error:', error);
             user.value = null;
         }
     };
 
     const login = async (credentials: { identifier: string; password: string }) => {
+        if (!$api) {
+            console.error('[useAuth] $api not available for login.');
+            return { success: false, error: 'API client not ready.' };
+        }
+
         const loginData = { email: credentials.identifier, password: credentials.password };
         try {
             await $api<{ message: string }>('/auth/login', {
@@ -37,12 +55,17 @@ export const useAuth = () => {
             await fetchUser();
             return { success: true };
         } catch (error: any) {
+            console.error('[useAuth] Login error:', error);
             user.value = null;
-            return { success: false, error: error?.data?.message || 'Login failed.' };
+            return { success: false, error: error?.data?.message || error?.message || 'Login failed.' };
         }
     };
 
     const signup = async (signupData: { name: string; email: string; password: string; phone?: string }) => {
+        if (!$api) {
+            console.error('[useAuth] $api not available for signup.');
+            return { success: false, error: 'API client not ready.' };
+        }
         try {
             await $api<{ message: string }>('/auth/signup', {
                 method: 'POST',
@@ -51,21 +74,34 @@ export const useAuth = () => {
             await fetchUser();
             return { success: true };
         } catch (error: any) {
-            return { success: false, error: error?.data?.message || 'Signup failed.' };
+            console.error('[useAuth] Signup error:', error);
+            return { success: false, error: error?.data?.message || error?.message || 'Signup failed.' };
         }
     };
 
     const logout = async () => {
+        if (!$api) {
+            console.error('[useAuth] $api not available for logout.');
+            return;
+        }
         try {
             await $api<{ message: string }>('/auth/logout', {
                 method: 'POST',
             });
         } catch (error) {
-            console.error(error);
+            console.error('[useAuth] Logout error:', error);
         } finally {
             user.value = null;
         }
     };
 
-    return { user, isAuthenticated, isAdmin, login, signup, logout, fetchUser };
+    return {
+        user,
+        isAuthenticated,
+        isAdmin,
+        login,
+        signup,
+        logout,
+        fetchUser,
+    };
 };

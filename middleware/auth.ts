@@ -1,12 +1,14 @@
-import { useAuth } from '~/composables/useAuth'; 
+import { useAuth } from '~/composables/useAuth';
+import { useNuxtApp, navigateTo } from '#app';
 
-export default defineNuxtRouteMiddleware((to, from) => {
+export default defineNuxtRouteMiddleware(async (to) => {
+  const nuxtApp = useNuxtApp();
   const { isAuthenticated } = useAuth();
 
+  await nuxtApp.$authPluginInitialized;
+
   if (!isAuthenticated.value) {
-    console.log('[Middleware: Auth] Not authenticated. Redirecting to /login');
     const redirectPath = to.fullPath !== '/' ? to.fullPath : '/dashboard';
     return navigateTo(`/login?redirect=${encodeURIComponent(redirectPath)}`, { replace: true });
   }
-  console.log('[Middleware: Auth] Authenticated. Allowing access to', to.path);
 });
