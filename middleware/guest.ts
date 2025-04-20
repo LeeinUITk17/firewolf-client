@@ -1,13 +1,16 @@
 import { useAuth } from '~/composables/useAuth';
-import { useNuxtApp, navigateTo } from '#app';
+import { navigateTo } from '#app';
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  const nuxtApp = useNuxtApp();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated, fetchUser } = useAuth();
 
-  await nuxtApp.$authPluginInitialized;
+  if (process.client) {
+    if (!user.value) {
+      await fetchUser();
+    }
 
-  if (isAuthenticated.value) {
-    return navigateTo('/dashboard', { replace: true });
+    if (isAuthenticated.value) {
+      return navigateTo('/dashboard', { replace: true });
+    }
   }
 });

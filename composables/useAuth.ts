@@ -24,14 +24,17 @@ export const useAuth = () => {
             return;
         }
         try {
+            console.log('[useAuth] Fetching user...');
             const fetchedUser = await $api<AuthUser | null>('/auth/profile', {
                 method: 'GET',
                 ignoreResponseError: true,
             });
-
+    
             if (fetchedUser && typeof fetchedUser === 'object' && fetchedUser.id) {
+                console.log('[useAuth] User fetched successfully:', fetchedUser);
                 user.value = fetchedUser as AuthUser;
             } else {
+                console.warn('[useAuth] No user found.');
                 user.value = null;
             }
         } catch (error: any) {

@@ -1,6 +1,5 @@
 <template>
     <div class="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
-        <h1 class="text-2xl font-semibold text-white mb-8">Personal Information</h1>
 
         <div v-if="loading" class="text-center py-20">
             <AppSpinner class="w-10 h-10 inline-block" />

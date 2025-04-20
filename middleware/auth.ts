@@ -1,14 +1,19 @@
 import { useAuth } from '~/composables/useAuth';
-import { useNuxtApp, navigateTo } from '#app';
+import { navigateTo } from '#app';
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  const nuxtApp = useNuxtApp();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated, fetchUser } = useAuth();
 
-  await nuxtApp.$authPluginInitialized;
+  if (process.client) {
+    if (!user.value) {
+      await fetchUser();
+    }
 
-  if (!isAuthenticated.value) {
-    const redirectPath = to.fullPath !== '/' ? to.fullPath : '/dashboard';
-    return navigateTo(`/login?redirect=${encodeURIComponent(redirectPath)}`, { replace: true });
+    if (!isAuthenticated.value) {
+      const redirectPath = to.fullPath !== '/' ? to.fullPath : '/dashboard';
+      return navigateTo(`/login?redirect=${encodeURIComponent(redirectPath)}`, { replace: true });
+    }
   }
+
+  console.log('[Middleware: Auth] Allowing navigation to', to.path);
 });
