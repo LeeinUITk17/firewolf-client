@@ -95,16 +95,30 @@ export interface User {
     alerts?: Alert[]; // Assuming Alert is already defined
 }
 
-export interface Camera {
+export enum CameraStatus { // Thêm enum này
+    ONLINE = 'ONLINE',
+    OFFLINE = 'OFFLINE',
+    RECORDING = 'RECORDING',
+    ERROR = 'ERROR',
+  }
+  
+  export interface Camera {
     id: string;
     name: string;
     url: string;
-    createdAt: string | Date;
     zoneId: string;
     latitude?: number | null;
     longitude?: number | null;
+    createdAt: string | Date;
+    // --- Thêm các trường từ schema ---
+    status: CameraStatus;
+    isDetecting: boolean;
+    lastSnapshotUrl?: string | null; // Thêm nếu có
+    // --------------------------------
     zone?: Zone;
-}
+    // alerts?: Alert[]; // Thường không cần khi lấy list camera
+  }
+  
 
 export interface Alert {
     id: string;
