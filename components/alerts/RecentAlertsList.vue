@@ -2,7 +2,7 @@
     <div>
         <ul v-if="!loading && alerts && alerts.length > 0" role="list" class="divide-y divide-gray-700">
             <li v-for="alert in alerts" :key="alert.id" class="py-3 sm:py-4 px-1 hover:bg-gray-800 rounded transition-colors">
-                <NuxtLink :to="`/alerts/${alert.id}`" class="flex items-center space-x-3">
+                <NuxtLink :to="`/alerts`" class="flex items-center space-x-3">
                     <div class="flex-shrink-0">
                         <span class="p-1.5 rounded-full" :class="getAlertIconBg(alert.status)">
                             <BellAlertIcon v-if="alert.status === AlertStatus.PENDING" class="h-4 w-4 text-red-400" />
