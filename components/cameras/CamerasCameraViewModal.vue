@@ -23,14 +23,14 @@
                 </dl>
 
                 <div class="aspect-video bg-black rounded border border-gray-700 relative overflow-hidden">
-                    <div v-if="loadingSnapshot" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 z-10">
+                    <div v-if="pending" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 z-10">
                         <AppSpinner class="w-8 h-8" />
                         <span class="mt-2 text-xs">Loading snapshot...</span>
                     </div>
-                    <div v-else-if="snapshotError" class="absolute inset-0 flex flex-col items-center justify-center text-red-400 z-10 p-4 text-center">
+                    <div v-else-if="error" class="absolute inset-0 flex flex-col items-center justify-center text-red-400 z-10 p-4 text-center">
                         <ExclamationTriangleIcon class="w-8 h-8 mb-2" />
                         <p class="text-xs font-medium">Snapshot loading error:</p>
-                        <p class="text-xs mt-1">{{ snapshotError }}</p>
+                        <p class="text-xs mt-1">{{ error.data?.message || error.message }}</p>
                         <button @click="fetchSnapshot" class="mt-3 text-xs text-orange-300 hover:underline">Retry</button>
                     </div>
                     <img v-else-if="snapshotUrl" :src="snapshotUrl" alt="Camera Snapshot" class="absolute inset-0 w-full h-full object-contain" />
@@ -38,14 +38,14 @@
                         No snapshot available
                     </div>
                 </div>
-                <p class="text-xs text-gray-500 mt-2 text-center">Snapshot captured when this window was opened.</p>
+                <p class="text-xs text-gray-500 mt-2 text-center">Snapshot is refreshed when this window is opened or by using the refresh button.</p>
             </div>
         </template>
 
         <template #footer>
             <div class="flex justify-between w-full items-center">
-                <button @click="fetchSnapshot" :disabled="loadingSnapshot" title="Refresh Snapshot" class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': loadingSnapshot }" />
+                <button @click="fetchSnapshot" :disabled="pending" title="Refresh Snapshot" class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <ArrowPathIcon class="h-4 w-4" :class="{ 'animate-spin': pending }" />
                 </button>
                 <button type="button" class="btn-secondary" @click="$emit('close')">
                     Close
@@ -56,102 +56,75 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, defineProps, defineEmits, onUnmounted } from 'vue';
-import { useNuxtApp } from '#app';
+import { ref, watch, onUnmounted } from 'vue';
+import { useApi } from '~/composables/useApi';
 import AppModal from '~/components/ui/AppModal.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import CamerasCameraStatusBadge from '~/components/cameras/CameraStatusBadge.vue';
 import { ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline';
 import type { CameraWithDetails } from '~/types/api';
-import type { $Fetch } from 'ofetch';
 
 const props = defineProps({
     isOpen: { type: Boolean, required: true },
     camera: { type: Object as () => CameraWithDetails | null, default: null },
 });
-const emit = defineEmits(['close']);
+defineEmits(['close']);
 
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
+const api = useApi();
 
 const snapshotUrl = ref<string | null>(null);
-const loadingSnapshot = ref(false);
-const snapshotError = ref<string | null>(null);
+const pending = ref(false);
+const error = ref<any | null>(null);
 
-const fetchSnapshot = async () => {
-    if (!props.camera?.id || loadingSnapshot.value) return;
-
-    loadingSnapshot.value = true;
-    snapshotError.value = null;
-
+const revokeSnapshotUrl = () => {
     if (snapshotUrl.value) {
         URL.revokeObjectURL(snapshotUrl.value);
         snapshotUrl.value = null;
     }
+};
+
+const fetchSnapshot = async () => {
+    if (!props.camera?.id || pending.value) return;
+
+    pending.value = true;
+    error.value = null;
+    revokeSnapshotUrl();
 
     try {
-        // Sử dụng Fetch API trực tiếp để hỗ trợ responseType: "blob"
-        const response = await fetch(`/cameras/${props.camera.id}/snapshot`, {
-            method: 'GET',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch snapshot: ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
+        const blob = await api.cameras.getSnapshot(props.camera.id);
         if (blob.type.startsWith('image/')) {
             snapshotUrl.value = URL.createObjectURL(blob);
         } else {
-            throw new Error('Invalid response type. Expected an image blob.');
+            const errorText = await blob.text();
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.message || 'Invalid response type. Expected an image.');
         }
     } catch (err: any) {
-        snapshotError.value = err.message || 'Unable to load snapshot.';
+        error.value = err;
         snapshotUrl.value = null;
     } finally {
-        loadingSnapshot.value = false;
+        pending.value = false;
     }
 };
 
-watch(
-    [() => props.isOpen, () => props.camera?.id],
-    ([newIsOpen, newCamId], [oldIsOpen, oldCamId]) => {
-        if (newIsOpen && newCamId && newCamId !== oldCamId) {
-            fetchSnapshot();
-        } else if (!newIsOpen && snapshotUrl.value) {
-            URL.revokeObjectURL(snapshotUrl.value);
-            snapshotUrl.value = null;
-            snapshotError.value = null;
-        }
-    },
-    { immediate: true }
-);
-
-onUnmounted(() => {
-    if (snapshotUrl.value) {
-        URL.revokeObjectURL(snapshotUrl.value);
+watch(() => props.isOpen, (newIsOpen) => {
+    if (newIsOpen && props.camera?.id) {
+        fetchSnapshot();
+    } else {
+        revokeSnapshotUrl();
+        error.value = null;
+        pending.value = false;
     }
 });
 
-const formatDateTime = (dateTimeString: string | Date | undefined | null): string => {
-    return '';
-};
+onUnmounted(() => {
+    revokeSnapshotUrl();
+});
 </script>
 
 <style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-    background: #374151;
-    border-radius: 3px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #6b7280;
-    border-radius: 3px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+.btn-secondary {
+    /* Add your styles here */
 }
 dl dt {
     flex-shrink: 0;

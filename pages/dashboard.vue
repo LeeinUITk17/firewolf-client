@@ -3,30 +3,53 @@
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-semibold text-white">System Overview</h1>
             <div class="flex items-center space-x-2">
-                <select v-model="selectedSensorId" @change="fetchChartData"
-                        class="py-1 px-2 border border-gray-600 bg-gray-700 text-white text-sm rounded-md focus:outline-none focus:ring-orange-500 focus:border-orange-500 h-9">
+                <select
+                    v-model="selectedSensorId"
+                    @change="() => fetchChartData()"
+                    class="py-1 px-2 border border-gray-600 bg-gray-700 text-white text-sm rounded-md focus:outline-none focus:ring-orange-500 focus:border-orange-500 h-9"
+                >
                     <option value="" disabled>-- Select Sensor --</option>
                     <optgroup label="Active">
-                        <option v-for="sensor in availableSensors.filter(s => s.status === SensorStatus.ACTIVE)" :key="sensor.id" :value="sensor.id">
+                        <option
+                            v-for="sensor in availableSensors.filter(s => s.status === SensorStatus.ACTIVE)"
+                            :key="sensor.id"
+                            :value="sensor.id"
+                        >
                             {{ sensor.name }}
                         </option>
                     </optgroup>
-                    <optgroup label="Others (Inactive, Error...)" v-if="availableSensors.some(s => s.status !== SensorStatus.ACTIVE)">
-                        <option v-for="sensor in availableSensors.filter(s => s.status !== SensorStatus.ACTIVE)" :key="sensor.id" :value="sensor.id" class="text-gray-400">
+                    <optgroup
+                        label="Others (Inactive, Error...)"
+                        v-if="availableSensors.some(s => s.status !== SensorStatus.ACTIVE)"
+                    >
+                        <option
+                            v-for="sensor in availableSensors.filter(s => s.status !== SensorStatus.ACTIVE)"
+                            :key="sensor.id"
+                            :value="sensor.id"
+                            class="text-gray-400"
+                        >
                             {{ sensor.name }} ({{ sensor.status }})
                         </option>
                     </optgroup>
                     <option v-if="availableSensors.length === 0" disabled>No sensors available</option>
                 </select>
-                <button @click="refreshAllData" :disabled="loading || chartLoading" title="Refresh Data"
-                        class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <button
+                    @click="refreshAllData"
+                    :disabled="loading || chartLoading"
+                    title="Refresh Data"
+                    class="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
                     <ArrowPathIcon class="h-5 w-5" :class="{'animate-spin': loading || chartLoading}" />
                 </button>
             </div>
         </div>
 
-        <div v-if="statsLoading && !initialDataLoaded" class="text-center py-10"><AppSpinner /></div>
-        <div v-if="statsError && !statsLoading" class="mb-6 rounded-md bg-red-900/40 border border-red-700/50 p-4 text-red-300">{{ statsError }}</div>
+        <div v-if="statsLoading && !initialDataLoaded" class="text-center py-10">
+            <AppSpinner />
+        </div>
+        <div v-if="statsError && !statsLoading" class="mb-6 rounded-md bg-red-900/40 border border-red-700/50 p-4 text-red-300">
+            {{ statsError }}
+        </div>
 
         <div v-if="initialDataLoaded" class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             <DashboardStatCard
@@ -47,7 +70,7 @@
 
             <DashboardStatCard
                 title="Pending Alerts"
-                :value="alertStats.pending" 
+                :value="alertStats.pending"
                 :icon="BellAlertIcon"
                 icon-color="text-red-400"
                 icon-bg-color="bg-red-900/30"
@@ -83,7 +106,7 @@
                         Chart {{ selectedSensorName || 'Temperature & Humidity' }}
                     </h3>
                 </div>
-                <ChartsLineChart :chart-data="chartData" :loading="chartLoading" height="300px"/>
+                <ChartsLineChart :chart-data="chartData" :loading="chartLoading" height="300px" />
             </div>
 
             <div class="bg-gray-850 p-4 rounded-lg shadow border border-gray-700 min-h-[350px]">
@@ -98,182 +121,146 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive, computed } from 'vue';
-import { useNuxtApp } from '#app';
-import type { $Fetch } from 'ofetch';
-import DashboardStatCard from '~/components/dashboard/StatCard.vue';
-import ChartsLineChart from '~/components/charts/LineChart.vue';
-import AlertsRecentAlertsList from '~/components/alerts/RecentAlertsList.vue';
-import AppSpinner from '~/components/ui/AppSpinner.vue';
-import { BeakerIcon, BellAlertIcon, VideoCameraIcon, ArrowPathIcon, ChartBarIcon } from '@heroicons/vue/24/outline';
-import { SensorStatus, type AlertWithRelations, type Sensor } from '~/types/api';
-import type { ChartData } from 'chart.js';
+import { ref, computed, watch } from 'vue'
+import { useApi } from '~/composables/useApi'
+import { useAsyncData } from '#app'
+import DashboardStatCard from '~/components/dashboard/StatCard.vue'
+import ChartsLineChart from '~/components/charts/LineChart.vue'
+import AlertsRecentAlertsList from '~/components/alerts/RecentAlertsList.vue'
+import AppSpinner from '~/components/ui/AppSpinner.vue'
+import { BeakerIcon, BellAlertIcon, VideoCameraIcon, ArrowPathIcon, ChartBarIcon } from '@heroicons/vue/24/outline'
+import { SensorStatus, type AlertWithRelations, type Sensor } from '~/types/api'
+import type { ChartData } from 'chart.js'
 
-definePageMeta({ layout: 'default', middleware: 'auth' });
+definePageMeta({ layout: 'default',middleware: 'auth'})
 
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
+const api = useApi()
 
-const statsLoading = ref(true);
-const loading = ref(false); 
-const initialDataLoaded = ref(false);
-const statsError = ref<string | null>(null);
-const sensorStats = reactive({ total: 0, active: 0, inactive: 0, error: 0 });
-const alertStats = reactive({ pending: 0 });
-const cameraStats = reactive({ total: 0 });
-const avgTemp = ref<number | null>(null);
-const chartLoading = ref(false);
-const availableSensors = ref<Pick<Sensor, 'id' | 'name' | 'status'>[]>([]);
-const selectedSensorId = ref<string>('');
-const chartData = ref<ChartData<'line'> | null>(null);
-const recentAlertsLoading = ref(false);
-const recentAlerts = ref<AlertWithRelations[]>([]);
-
-const selectedSensorName = computed(() => {
-    return availableSensors.value.find(s => s.id === selectedSensorId.value)?.name || '';
-});
-
-const fetchStatsAndRecent = async () => {
-    statsLoading.value = true;
-    statsError.value = null;
-    recentAlertsLoading.value = true;
-    try {
-        const [sensorsStatRes, alertsStatRes, camerasStatRes, avgTempRes, recentAlertsRes] = await Promise.allSettled([
-            $api<{ total: number; active: number; inactive: number; error: number }>('/sensors/stats'),
-            $api<{ pending: number; resolvedToday?: number; totalToday?: number }>('/alerts/stats'),
-            $api<{ total: number }>('/cameras/stats'),
-            $api<{ averageTemperature: number | null }>('/logs/stats'),
-            $api<AlertWithRelations[]>('/alerts', { params: { limit: 5, status: 'PENDING', sortBy: 'createdAt', sortOrder: 'desc' } })
-        ]);
-
-        if (sensorsStatRes.status === 'fulfilled' && sensorsStatRes.value) {
-            Object.assign(sensorStats, sensorsStatRes.value);
+const {
+    data: dashboardData,
+    pending: statsLoading,
+    error: statsError,
+    refresh: refreshStatsAndSensors,
+} = useAsyncData(
+    'dashboard-main-data',
+    async () => {
+        const [
+            sensorsStatRes,
+            alertsStatRes,
+            camerasStatRes,
+            avgTempRes,
+            recentAlertsRes,
+            availableSensorsRes,
+        ] = await Promise.allSettled([
+            api.sensors.getStats(),
+            api.alerts.getStats(),
+            api.cameras.getStats(),
+            api.logs.getStats(),
+            api.alerts.getRecentPending(5),
+            api.sensors.getAll({ limit: 1000, fields: 'id,name,status' }),
+        ])
+        return {
+            sensorStats: sensorsStatRes.status === 'fulfilled' ? sensorsStatRes.value : { total: 0, active: 0, inactive: 0, error: 0 },
+            alertStats: alertsStatRes.status === 'fulfilled' ? alertsStatRes.value : { pending: 0 },
+            cameraStats: camerasStatRes.status === 'fulfilled' ? camerasStatRes.value : { total: 0 },
+            avgTemp: avgTempRes.status === 'fulfilled' ? avgTempRes.value.averageTemperature : null,
+            recentAlerts: recentAlertsRes.status === 'fulfilled' ? recentAlertsRes.value.data : [],
+            availableSensors: availableSensorsRes.status === 'fulfilled' ? availableSensorsRes.value : [],
         }
-
-        if (alertsStatRes.status === 'fulfilled' && alertsStatRes.value) {
-            Object.assign(alertStats, alertsStatRes.value);
-        }
-
-        if (camerasStatRes.status === 'fulfilled' && camerasStatRes.value) {
-            Object.assign(cameraStats, camerasStatRes.value);
-        }
-
-        if (avgTempRes.status === 'fulfilled' && avgTempRes.value) {
-            avgTemp.value = avgTempRes.value.averageTemperature;
-        }
-
-        if (recentAlertsRes.status === 'fulfilled' && recentAlertsRes.value) {
-            const alertsData = Array.isArray(recentAlertsRes.value) 
-                ? recentAlertsRes.value 
-                : (recentAlertsRes.value as { data: AlertWithRelations[] }).data;
-            recentAlerts.value = alertsData || [];
-        }
-
-        if ([sensorsStatRes, alertsStatRes, camerasStatRes, avgTempRes].some(r => r.status === 'rejected')) {
-            statsError.value = "Unable to load all statistics.";
-        }
-        initialDataLoaded.value = true;
-
-    } catch {
-        statsError.value = 'An unexpected error occurred while loading dashboard data.';
-    } finally {
-        statsLoading.value = false;
-        recentAlertsLoading.value = false;
+    },
+    {
+        lazy: true,
+        server: false,
     }
-};
+)
 
-const fetchAvailableSensors = async () => {
-    try {
-        const sensorsList = await $api<Pick<Sensor, 'id' | 'name' | 'status'>[]>('/sensors', {
-            params: { limit: 1000 }
-        });
-        availableSensors.value = sensorsList || [];
+const sensorStats = computed(() => dashboardData.value?.sensorStats ?? { total: 0, active: 0, inactive: 0, error: 0 })
+const alertStats = computed(() => dashboardData.value?.alertStats ?? { pending: 0 })
+const cameraStats = computed(() => dashboardData.value?.cameraStats ?? { total: 0 })
+const avgTemp = computed(() => dashboardData.value?.avgTemp ?? null)
+const recentAlerts = computed(() => dashboardData.value?.recentAlerts ?? [])
+const availableSensors = computed(() => dashboardData.value?.availableSensors ?? [])
+const initialDataLoaded = computed(() => !statsLoading.value && dashboardData.value !== null)
+const recentAlertsLoading = statsLoading
+const loading = computed(() => statsLoading.value || chartLoading.value)
 
-        if (availableSensors.value.length > 0 && !selectedSensorId.value) {
-            const firstActiveSensor = availableSensors.value.find(s => s.status === SensorStatus.ACTIVE);
-            if (firstActiveSensor) {
-                selectedSensorId.value = firstActiveSensor.id;
-            } else {
-                selectedSensorId.value = availableSensors.value[0].id;
-            }
-            fetchChartData();
-        } else if (availableSensors.value.length === 0) {
-            selectedSensorId.value = '';
-            chartData.value = { datasets: [] };
-        }
-    } catch {
-        availableSensors.value = [];
-        selectedSensorId.value = '';
-        chartData.value = { datasets: [] };
-    }
-};
+const selectedSensorId = ref<string>('')
+const selectedSensorName = computed(() => availableSensors.value.find(s => s.id === selectedSensorId.value)?.name || '')
 
-const fetchChartData = async () => {
-    if (!selectedSensorId.value) {
-        chartData.value = { datasets: [] };
-        return;
-    }
-    chartLoading.value = true;
-    try {
-        const response = await $api<Record<string, { timestamp: string | Date; temperature: number | null; humidity: number | null }[]>>('/logs/chart', {
-            params: { sensorIds: selectedSensorId.value }
-        });
-
-        const sensorData = response[selectedSensorId.value];
-
-        if (sensorData && sensorData.length > 0) {
+const {
+    data: chartData,
+    pending: chartLoading,
+    execute: fetchChartData,
+} = useAsyncData(
+    'dashboard-chart-data',
+    () => {
+        if (!selectedSensorId.value) return Promise.resolve(null)
+        return api.logs.getChartData(selectedSensorId.value)
+    },
+    {
+        immediate: false,
+        watch: [selectedSensorId],
+        transform: (response): ChartData<'line'> => {
+            if (!response || !selectedSensorId.value) return { labels: [], datasets: [] }
+            const sensorData = response[selectedSensorId.value]
+            if (!sensorData || sensorData.length === 0) return { labels: [], datasets: [] }
             const tempData = sensorData
                 .filter(log => log.temperature !== null)
-                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.temperature as number }));
-
+                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.temperature as number }))
             const humidityData = sensorData
                 .filter(log => log.humidity !== null)
-                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.humidity as number }));
-
-            chartData.value = {
+                .map(log => ({ x: new Date(log.timestamp).valueOf(), y: log.humidity as number }))
+            return {
                 datasets: [
-                    ...(tempData.length > 0 ? [{
-                        label: 'Temperature (°C)',
-                        data: tempData,
-                        borderColor: '#f87171',
-                        backgroundColor: 'rgba(248, 113, 113, 0.1)',
-                        tension: 0.1,
-                        yAxisID: 'y',
-                        pointRadius: 1.5,
-                        pointHoverRadius: 4,
-                    }] : []),
-                    ...(humidityData.length > 0 ? [{
-                        label: 'Humidity (%)',
-                        data: humidityData,
-                        borderColor: '#60a5fa',
-                        backgroundColor: 'rgba(96, 165, 250, 0.1)',
-                        tension: 0.1,
-                        yAxisID: 'y1',
-                        pointRadius: 1.5,
-                        pointHoverRadius: 4,
-                        hidden: false,
-                    }] : [])
-                ]
-            };
-        } else {
-            chartData.value = { datasets: [] };
-        }
-    } catch {
-        chartData.value = { datasets: [] };
-    } finally {
-        chartLoading.value = false;
+                    ...(tempData.length > 0
+                        ? [
+                                {
+                                    label: 'Temperature (°C)',
+                                    data: tempData,
+                                    borderColor: '#f87171',
+                                    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                                    tension: 0.1,
+                                    yAxisID: 'y',
+                                    pointRadius: 1.5,
+                                    pointHoverRadius: 4,
+                                },
+                            ]
+                        : []),
+                    ...(humidityData.length > 0
+                        ? [
+                                {
+                                    label: 'Humidity (%)',
+                                    data: humidityData,
+                                    borderColor: '#60a5fa',
+                                    backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                                    tension: 0.1,
+                                    yAxisID: 'y1',
+                                    pointRadius: 1.5,
+                                    pointHoverRadius: 4,
+                                    hidden: false,
+                                },
+                            ]
+                        : []),
+                ],
+            }
+        },
     }
-};
+)
 
-const refreshAllData = () => {
-    fetchStatsAndRecent();
-    fetchChartData();
-};
+watch(
+    availableSensors,
+    newSensors => {
+        if (newSensors && newSensors.length > 0 && !selectedSensorId.value) {
+            const firstActiveSensor = newSensors.find(s => s.status === SensorStatus.ACTIVE)
+            selectedSensorId.value = firstActiveSensor ? firstActiveSensor.id : newSensors[0].id
+        }
+    },
+    { immediate: true }
+)
 
-onMounted(() => {
-    fetchStatsAndRecent();
-    fetchAvailableSensors();
-});
+const refreshAllData = async () => {
+    await Promise.all([refreshStatsAndSensors(), fetchChartData()])
+}
 </script>
 
 <style scoped>

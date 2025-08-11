@@ -50,7 +50,7 @@ export interface SensorWithOptionalZone {
     latitude?: number | null;
     longitude?: number | null;
     zone?: Zone;
-    latestLog?: { temperature?: number | null, humidity?: number | null, createdAt: Date | string } | null;
+    latestLog?: { temperature?: number | null; humidity?: number | null; createdAt: Date | string } | null;
     activeAlert?: Alert | null;
     logs?: SensorLog[];
 }
@@ -92,17 +92,17 @@ export interface User {
     isActive: boolean;
     createdAt: string | Date;
     updatedAt: string | Date;
-    alerts?: Alert[]; // Assuming Alert is already defined
+    alerts?: Alert[];
 }
 
-export enum CameraStatus { // Thêm enum này
+export enum CameraStatus {
     ONLINE = 'ONLINE',
     OFFLINE = 'OFFLINE',
     RECORDING = 'RECORDING',
     ERROR = 'ERROR',
-  }
-  
-  export interface Camera {
+}
+
+export interface Camera {
     id: string;
     name: string;
     url: string;
@@ -110,15 +110,11 @@ export enum CameraStatus { // Thêm enum này
     latitude?: number | null;
     longitude?: number | null;
     createdAt: string | Date;
-    // --- Thêm các trường từ schema ---
     status: CameraStatus;
     isDetecting: boolean;
-    lastSnapshotUrl?: string | null; // Thêm nếu có
-    // --------------------------------
+    lastSnapshotUrl?: string | null;
     zone?: Zone;
-    // alerts?: Alert[]; // Thường không cần khi lấy list camera
-  }
-  
+}
 
 export interface Alert {
     id: string;
@@ -162,11 +158,13 @@ export interface PaginatedResponse<T> {
     data: T[];
     total: number;
 }
+
 export interface AlertWithRelations extends Alert {
     sensor?: Sensor & {
         zone?: Zone;
     };
 }
+
 export interface CameraWithOptionalZone {
     id: string;
     name: string;
@@ -175,8 +173,9 @@ export interface CameraWithOptionalZone {
     zoneId: string;
     latitude?: number | null;
     longitude?: number | null;
-    zone?: { name?: string }; // Custom definition
+    zone?: { name?: string };
 }
+
 export interface AlertWithSensorZone extends Alert {
     sensor?: Sensor & {
         zone?: { name?: string };

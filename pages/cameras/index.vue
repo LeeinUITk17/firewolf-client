@@ -2,29 +2,30 @@
     <div class="p-4 sm:p-6 lg:p-8">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 pb-3 border-b border-gray-700 gap-4">
             <h1 class="text-2xl font-semibold text-white">Camera Management</h1>
-            <NuxtLink to="/cameras/config" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-orange-500">
+            <NuxtLink
+                to="/cameras/config"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-orange-500"
+            >
                 <PlusIcon class="h-5 w-5 mr-2" />
                 Add New Camera
             </NuxtLink>
         </div>
 
-        <div v-if="loading" class="text-center py-20">
+        <div v-if="pending && !cameras" class="text-center py-20">
             <AppSpinner class="w-10 h-10 inline-block" />
             <p class="text-gray-400 mt-3">Loading camera list...</p>
         </div>
-
         <div v-else-if="error" class="error-alert mb-6 flex justify-between items-center">
             <div class="flex items-center">
                 <XCircleIcon class="h-5 w-5 mr-2 flex-shrink-0" />
-                <span>{{ error }}</span>
+                <span>{{ 'Unable to load camera list.' }}</span>
             </div>
-            <button @click="fetchCameras" class="text-sm font-medium text-orange-400 hover:underline">Retry</button>
+            <button @click="refresh()" class="text-sm font-medium text-orange-400 hover:underline">Retry</button>
         </div>
-
         <div v-else>
             <CamerasCameraTable
-                :cameras="cameras"
-                :loading="isTableLoading"
+                :cameras="cameras ?? []"
+                :loading="pending"
                 @delete="confirmDeleteCamera"
                 @edit="editCamera"
                 @view="viewCameraStream"
@@ -40,7 +41,8 @@
             </template>
             <template #footer>
                 <button @click="executeDelete" :disabled="deleting" class="btn-danger inline-flex items-center">
-                    <AppSpinner v-if="deleting" class="w-4 h-4 mr-2" /> {{ deleting ? 'Deleting...' : 'Delete' }}
+                    <AppSpinner v-if="deleting" class="w-4 h-4 mr-2" />
+                    {{ deleting ? 'Deleting...' : 'Delete' }}
                 </button>
                 <button @click="cancelDelete" class="ml-3 btn-secondary">Cancel</button>
             </template>
@@ -49,48 +51,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useNuxtApp, navigateTo } from '#app';
+import { ref, nextTick } from 'vue';
+import { navigateTo, useAsyncData } from '#app';
+import { useApi } from '~/composables/useApi';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import CamerasCameraTable from '~/components/cameras/CameraTable.vue';
 import AppModal from '~/components/ui/AppModal.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import { PlusIcon, XCircleIcon } from '@heroicons/vue/20/solid';
-import type { CameraWithDetails, Camera } from '~/types/api';
-import type { $Fetch } from 'ofetch';
+import type { Camera } from '~/types/api';
 
 definePageMeta({
     layout: 'default',
-    middleware: ['auth']
+    middleware: ['auth'],
 });
 
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
-
-const cameras = ref<CameraWithDetails[]>([]);
-const loading = ref(true);
-const isTableLoading = ref(false);
-const error = ref<string | null>(null);
+const api = useApi();
 const showDeleteConfirm = ref(false);
 const cameraToDelete = ref<Camera | null>(null);
 const deleting = ref(false);
 
-const fetchCameras = async () => {
-    loading.value = true;
-    isTableLoading.value = true;
-    error.value = null;
-    try {
-        const data = await $api<CameraWithDetails[]>('/cameras');
-        cameras.value = data || [];
-    } catch (err: any) {
-        error.value = err?.data?.message || "Unable to load camera list.";
-        cameras.value = [];
-    } finally {
-        loading.value = false;
-        isTableLoading.value = false;
-    }
-};
+const { data: cameras, pending, error, refresh } = useAsyncData(
+    'cameras-list',
+    () => api.cameras.getAll(),
+    { server: false, lazy: true }
+);
 
 const editCamera = (camera: Camera) => {
     navigateTo(`/cameras/config?edit=${camera.id}`);
@@ -103,17 +89,17 @@ const confirmDeleteCamera = (camera: Camera) => {
 
 const cancelDelete = () => {
     showDeleteConfirm.value = false;
-    setTimeout(() => { cameraToDelete.value = null; }, 200);
+    nextTick(() => {
+        cameraToDelete.value = null;
+    });
 };
 
 const executeDelete = async () => {
     if (!cameraToDelete.value) return;
     deleting.value = true;
-    error.value = null;
-
     try {
-        await $api(`/cameras/${cameraToDelete.value.id}`, { method: 'DELETE' });
-        cameras.value = cameras.value.filter(c => c.id !== cameraToDelete.value!.id);
+        await api.cameras.delete(cameraToDelete.value.id);
+        await refresh();
         cancelDelete();
         Swal.fire({
             icon: 'success',
@@ -126,17 +112,17 @@ const executeDelete = async () => {
             color: '#d1d5db',
             customClass: { popup: 'swal2-dark' },
             toast: true,
-            position: 'top-end'
+            position: 'top-end',
         });
     } catch (err: any) {
         Swal.fire({
             icon: 'error',
             title: 'Error!',
-            text: err?.data?.message || `Unable to delete camera "${cameraToDelete.value.name}".`,
+            text: err.data?.message || `Unable to delete camera.`,
             background: '#1f2937',
             color: '#d1d5db',
             confirmButtonColor: '#f97316',
-            customClass: { popup: 'swal2-dark' }
+            customClass: { popup: 'swal2-dark' },
         });
     } finally {
         deleting.value = false;
@@ -151,13 +137,9 @@ const viewCameraStream = (camera: Camera) => {
         background: '#1f2937',
         color: '#d1d5db',
         confirmButtonColor: '#f97316',
-        customClass: { popup: 'swal2-dark' }
+        customClass: { popup: 'swal2-dark' },
     });
 };
-
-onMounted(() => {
-    fetchCameras();
-});
 </script>
 
 <style scoped>

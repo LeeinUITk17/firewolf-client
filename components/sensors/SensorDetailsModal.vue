@@ -1,47 +1,48 @@
 <template>
     <AppModal :is-open="isOpen" @close="$emit('close')">
         <template #title>
-            Sensor Details: {{ sensor?.name }}
+            Sensor Details: {{ sensorDetail?.name }}
         </template>
 
         <template #content>
-            <div v-if="loading" class="text-center py-10">
+            <div v-if="pending" class="text-center py-10">
                 <AppSpinner class="inline-block w-8 h-8" />
                 <p class="text-gray-400 mt-2">Loading details...</p>
             </div>
-            <div v-else-if="error" class="text-red-400 bg-red-900 bg-opacity-30 p-3 rounded border border-red-700">
-                {{ error }}
+            <div v-else-if="error" class="error-alert">
+                <span>{{ error.data?.message || 'Unable to load sensor details.' }}</span>
+                <button @click="fetchSensorDetails" class="ml-auto underline text-sm">Retry</button>
             </div>
-            <div v-else-if="sensor" class="space-y-4 text-sm">
+            <div v-else-if="sensorDetail" class="space-y-4 text-sm">
                 <div class="grid grid-cols-3 gap-x-4 gap-y-2">
                     <dt class="text-gray-400">ID:</dt>
-                    <dd class="col-span-2 text-gray-200 font-mono">{{ sensor.id }}</dd>
+                    <dd class="col-span-2 text-gray-200 font-mono text-xs">{{ sensorDetail.id }}</dd>
 
                     <dt class="text-gray-400">Type:</dt>
-                    <dd class="col-span-2 text-gray-200">{{ sensor.type }}</dd>
+                    <dd class="col-span-2 text-gray-200">{{ sensorDetail.type }}</dd>
 
                     <dt class="text-gray-400">Location:</dt>
-                    <dd class="col-span-2 text-gray-200">{{ sensor.location }}</dd>
+                    <dd class="col-span-2 text-gray-200">{{ sensorDetail.location }}</dd>
 
                     <dt class="text-gray-400">Zone:</dt>
-                    <dd class="col-span-2 text-gray-200">{{ sensor.zone?.name || 'N/A' }}</dd>
+                    <dd class="col-span-2 text-gray-200">{{ sensorDetail.zone?.name || 'N/A' }}</dd>
 
                     <dt class="text-gray-400">Status:</dt>
                     <dd class="col-span-2">
-                        <SensorsSensorStatusBadge :status="sensor.status" />
+                        <SensorsSensorStatusBadge :status="sensorDetail.status" />
                     </dd>
 
                     <dt class="text-gray-400">Threshold:</dt>
                     <dd class="col-span-2 text-gray-200">
-                        {{ sensor.threshold != null ? sensor.threshold.toFixed(1) : '-' }}
-                        <span v-if="sensor.threshold !== null">°C</span>
+                        {{ sensorDetail.threshold != null ? sensorDetail.threshold.toFixed(1) : '-' }}
+                        <span v-if="sensorDetail.threshold !== null">°C</span>
                     </dd>
 
                     <dt class="text-gray-400">Sensitivity:</dt>
-                    <dd class="col-span-2 text-gray-200">{{ sensor.sensitivity ?? 'Not set' }}</dd>
+                    <dd class="col-span-2 text-gray-200">{{ sensorDetail.sensitivity ?? 'Not set' }}</dd>
 
                     <dt class="text-gray-400">Created At:</dt>
-                    <dd class="col-span-2 text-gray-200">{{ formatDateTime(sensor.createdAt) }}</dd>
+                    <dd class="col-span-2 text-gray-200">{{ formatDateTime(sensorDetail.createdAt) }}</dd>
                 </div>
 
                 <div class="mt-6 pt-4 border-t border-gray-700">
@@ -51,15 +52,15 @@
                             <thead class="bg-gray-700 sticky top-0">
                                 <tr>
                                     <th scope="col" class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Time</th>
-                                    <th scope="col" class="px-3 py-2 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Temperature (°C)</th>
+                                    <th scope="col" class="px-3 py-2 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Temp (°C)</th>
                                     <th scope="col" class="px-3 py-2 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Humidity (%)</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-gray-800 divide-y divide-gray-600">
-                                <tr v-if="!sensor.logs || sensor.logs.length === 0">
+                                <tr v-if="!sensorDetail.logs || sensorDetail.logs.length === 0">
                                     <td colspan="3" class="px-3 py-3 text-center text-sm text-gray-500">No logs available.</td>
                                 </tr>
-                                <tr v-for="log in sensor.logs" :key="log.id">
+                                <tr v-for="log in sensorDetail.logs" :key="log.id">
                                     <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-400">{{ formatDateTime(log.createdAt) }}</td>
                                     <td class="px-3 py-2 whitespace-nowrap text-xs text-center" :class="{'text-white': log.temperature !== null, 'text-gray-600': log.temperature === null}">
                                         {{ log.temperature?.toFixed(1) ?? '-' }}
@@ -73,6 +74,7 @@
                     </div>
                 </div>
             </div>
+            <div v-else class="text-center py-10 text-gray-500">Sensor information not found.</div>
         </template>
 
         <template #footer>
@@ -88,78 +90,63 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, defineProps, defineEmits } from 'vue';
-import { useNuxtApp } from '#app';
+import { ref, watch } from 'vue';
+import { useApi } from '~/composables/useApi';
 import AppModal from '~/components/ui/AppModal.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import SensorsSensorStatusBadge from '~/components/sensors/SensorStatusBadge.vue';
-import type { Sensor, SensorLog, Zone } from '~/types/api';
-import type { $Fetch } from 'ofetch';
-
-interface SensorWithLogs extends Sensor {
-    logs?: SensorLog[];
-    zone?: Zone;
-}
+import type { SensorWithDetails } from '~/types/api';
 
 const props = defineProps({
-    isOpen: {
-        type: Boolean,
-        required: true,
-    },
-    sensorId: {
-        type: String,
-        default: null,
-    },
+    isOpen: { type: Boolean, required: true },
+    sensorId: { type: String, default: null },
 });
+defineEmits(['close']);
 
-const emit = defineEmits(['close']);
+const api = useApi();
 
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
+const sensorDetail = ref<SensorWithDetails | null>(null);
+const pending = ref(false);
+const error = ref<any | null>(null);
 
-const sensor = ref<SensorWithLogs | null>(null);
-const loading = ref(false);
-const error = ref<string | null>(null);
-
-watch(() => props.sensorId, async (newId) => {
-    if (newId && props.isOpen) {
-        await fetchSensorDetails(newId);
-    } else {
-        sensor.value = null;
-        error.value = null;
-    }
-}, { immediate: true });
-
-watch(() => props.isOpen, (newValue) => {
-    if (newValue && props.sensorId && !sensor.value) {
-        fetchSensorDetails(props.sensorId);
-    }
-});
-
-const fetchSensorDetails = async (id: string) => {
-    loading.value = true;
+const fetchSensorDetails = async () => {
+    if (!props.sensorId || pending.value) return;
+    pending.value = true;
     error.value = null;
-    sensor.value = null;
     try {
-        const data = await $api<SensorWithLogs>(`/sensors/${id}`, {
-            method: 'GET',
-        });
-        sensor.value = data;
+        sensorDetail.value = await api.sensors.getById(props.sensorId);
     } catch (err: any) {
-        error.value = err?.data?.message || `Unable to load sensor details (ID: ${id}).`;
+        error.value = err;
     } finally {
-        loading.value = false;
+        pending.value = false;
     }
 };
+
+const resetState = () => {
+    sensorDetail.value = null;
+    error.value = null;
+    pending.value = false;
+};
+
+watch(() => props.isOpen, (newIsOpen) => {
+    if (newIsOpen && props.sensorId) {
+        fetchSensorDetails();
+    } else if (!newIsOpen) {
+        resetState();
+    }
+});
 
 const formatDateTime = (dateTimeString: string | Date): string => {
     if (!dateTimeString) return 'N/A';
     try {
-        const date = new Date(dateTimeString);
-        if (isNaN(date.getTime())) return 'Invalid Date';
-        return date.toLocaleString('en-US', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+        return new Date(dateTimeString).toLocaleString('en-US', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
         });
     } catch {
         return 'Invalid Date';
@@ -168,21 +155,22 @@ const formatDateTime = (dateTimeString: string | Date): string => {
 </script>
 
 <style scoped>
+.error-alert {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    border-width: 1px;
+    background-color: rgba(191, 27, 27, 0.1);
+    border-color: rgba(220, 38, 38, 0.3);
+    color: #fca5a5;
+}
 .max-h-60 {
     max-height: 15rem;
 }
-.max-h-60::-webkit-scrollbar {
-    width: 6px;
-}
-.max-h-60::-webkit-scrollbar-track {
-    background: #4a5568;
-    border-radius: 3px;
-}
-.max-h-60::-webkit-scrollbar-thumb {
-    background: #718096;
-    border-radius: 3px;
-}
-.max-h-60::-webkit-scrollbar-thumb:hover {
-    background: #a0aec0;
-}
+.max-h-60::-webkit-scrollbar { width: 6px; }
+.max-h-60::-webkit-scrollbar-track { background: #4a5568; border-radius: 3px; }
+.max-h-60::-webkit-scrollbar-thumb { background: #718096; border-radius: 3px; }
+.max-h-60::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
 </style>

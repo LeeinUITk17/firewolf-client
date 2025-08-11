@@ -4,25 +4,24 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <p class="ml-4 text-gray-400 text-lg">loading...</p>
+        <p class="ml-4 text-gray-400 text-lg">Redirecting...</p>
     </div>
 </template>
 
 <script setup lang="ts">
-import { navigateTo, useNuxtApp } from '#app';
+import { navigateTo } from '#app';
 import { useAuth } from '~/composables/useAuth';
 
-const { $authPluginInitialized } = useNuxtApp();
-const { isAuthenticated } = useAuth();
-
-onMounted(async () => {
-    await $authPluginInitialized;
-
-    if (isAuthenticated.value) {
-        await navigateTo('/dashboard', { replace: true });
-    } else {
-        await navigateTo('/login', { replace: true });
+definePageMeta({
+  middleware: [
+    function (to, from) {
+      const { isAuthenticated } = useAuth();
+      if (isAuthenticated.value) {
+        return navigateTo('/dashboard', { replace: true });
+      }
+      return navigateTo('/login', { replace: true });
     }
+  ]
 });
 </script>
 

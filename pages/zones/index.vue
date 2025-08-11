@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="p-4 sm:p-6 lg:p-8">
         <div class="flex justify-between items-center mb-6">
             <h1 class="text-2xl font-semibold text-white">Zone Management</h1>
             <button
@@ -11,17 +11,20 @@
             </button>
         </div>
 
-        <ZonesZoneTable :zones="zones" :loading="loading" @edit="openEditModal" @delete="openDeleteModal" />
-
-        <div v-if="errorMessage" class="mt-4 rounded-md bg-red-50 p-4 border border-red-200">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <XCircleIcon class="h-5 w-5 text-red-400" aria-hidden="true" />
-                </div>
-                <div class="ml-3">
-                    <p class="text-sm font-medium text-red-800">{{ errorMessage }}</p>
-                </div>
-            </div>
+        <div v-if="pending && !zones" class="text-center py-20">
+            <AppSpinner /> Loading zones...
+        </div>
+        <div v-else-if="error" class="error-alert">
+            <span>{{ 'Failed to load zones.' }}</span>
+            <button @click="refresh()" class="ml-auto text-sm">Retry</button>
+        </div>
+        <div v-else>
+            <ZonesZoneTable :zones="zones ?? []" :loading="pending" @edit="openEditModal" @delete="openDeleteModal" />
+        </div>
+        
+        <div v-if="actionError" class="error-alert mt-4">
+            <XCircleIcon class="h-5 w-5 text-red-400 mr-2" />
+            <span>{{ actionError }}</span>
         </div>
 
         <AppModal :is-open="showFormModal" @close="closeFormModal">
@@ -41,63 +44,56 @@
             <template #title>Confirm Zone Deletion</template>
             <template #content>
                 <p class="text-sm text-gray-400">
-                    Are you sure you want to delete the zone <strong class="text-white">{{ zoneToDelete?.name }}</strong>? All related sensors and cameras will also be affected (or need reassignment). This action cannot be undone.
+                    Are you sure you want to delete the zone <strong class="text-white">{{ zoneToDelete?.name }}</strong>? All related sensors and cameras will also be affected. This action cannot be undone.
                 </p>
             </template>
             <template #footer>
-                <button @click="confirmDelete" :disabled="deleting" class="... bg-red-600 ...">
-                    <AppSpinner v-if="deleting" class="w-4 h-4 mr-2" /> {{ deleting ? 'Deleting...' : 'Delete' }}
+                <button @click="confirmDelete" :disabled="deleting" class="btn-danger">
+                    <AppSpinner v-if="deleting" class="w-4 h-4 mr-2" />
+                    {{ deleting ? 'Deleting...' : 'Delete' }}
                 </button>
-                <button @click="cancelDelete" ref="cancelButtonRef" class="ml-3 ... bg-gray-700 ...">Cancel</button>
+                <button @click="cancelDelete" class="ml-3 btn-secondary">Cancel</button>
             </template>
         </AppModal>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useNuxtApp } from '#app';
+import { ref, computed, nextTick } from 'vue';
+import { useApi } from '~/composables/useApi';
+import { useAsyncData } from '#app';
 import ZonesZoneTable from '~/components/zones/ZoneTable.vue';
 import ZonesZoneForm from '~/components/zones/ZoneForm.vue';
 import AppModal from '~/components/ui/AppModal.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import { XCircleIcon, PlusIcon } from '@heroicons/vue/20/solid';
 import type { Zone } from '~/types/api';
-import type { $Fetch } from 'ofetch';
+import Swal from 'sweetalert2';
 
 definePageMeta({
     layout: 'default',
     middleware: ['auth'],
 });
 
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
+const api = useApi();
 
-const zones = ref<Zone[]>([]);
-const loading = ref(false);
-const errorMessage = ref<string | null>(null);
+const { data: zones, pending, error, refresh } = useAsyncData(
+    'zones-list',
+    () => api.zones.getAll(),
+    { lazy: true, server: false }
+);
+
+const actionError = ref<string | null>(null);
+
 const showFormModal = ref(false);
 const zoneToEdit = ref<Zone | null>(null);
 const isSubmitting = ref(false);
+
 const showDeleteConfirm = ref(false);
 const zoneToDelete = ref<Zone | null>(null);
 const deleting = ref(false);
 
 const isEditMode = computed(() => !!zoneToEdit.value);
-
-const fetchZones = async () => {
-    loading.value = true;
-    errorMessage.value = null;
-    try {
-        const data = await $api<Zone[]>('/zones', { method: 'GET' });
-        zones.value = data || [];
-    } catch (error: any) {
-        errorMessage.value = error?.data?.message || 'Unable to load zones.';
-        zones.value = [];
-    } finally {
-        loading.value = false;
-    }
-};
 
 const openCreateModal = () => {
     zoneToEdit.value = null;
@@ -111,7 +107,33 @@ const openEditModal = (zone: Zone) => {
 
 const closeFormModal = () => {
     showFormModal.value = false;
-    zoneToEdit.value = null;
+    actionError.value = null;
+    nextTick(() => {
+        zoneToEdit.value = null;
+    });
+};
+
+const handleSubmitZone = async (formData: Partial<Zone>) => {
+    isSubmitting.value = true;
+    actionError.value = null;
+    try {
+        if (isEditMode.value && zoneToEdit.value?.id) {
+            await api.zones.update(zoneToEdit.value.id, formData);
+        } else {
+            await api.zones.create(formData);
+        }
+        await refresh();
+        closeFormModal();
+        Swal.fire({
+            toast: true,
+            icon: 'success',
+            title: `Zone ${isEditMode.value ? 'updated' : 'created'}!`,
+        });
+    } catch (err: any) {
+        actionError.value = err.data?.message || `Unable to ${isEditMode.value ? 'update' : 'add'} zone.`;
+    } finally {
+        isSubmitting.value = false;
+    }
 };
 
 const openDeleteModal = (zone: Zone) => {
@@ -121,53 +143,39 @@ const openDeleteModal = (zone: Zone) => {
 
 const cancelDelete = () => {
     showDeleteConfirm.value = false;
-    setTimeout(() => {
-        zoneToDelete.value = null;
-    }, 200);
-};
-
-const handleSubmitZone = async (formData: Partial<Zone>) => {
-    isSubmitting.value = true;
-    errorMessage.value = null;
-    const apiUrl = isEditMode.value ? `/zones/${formData.id}` : '/zones';
-    const apiMethod = isEditMode.value ? 'PATCH' : 'POST';
-
-    try {
-        if (isEditMode.value && formData.id) {
-            const updatedZone = await $api<Zone>(apiUrl, { method: apiMethod, body: formData });
-            const index = zones.value.findIndex((z) => z.id === updatedZone.id);
-            if (index !== -1) {
-                zones.value[index] = { ...zones.value[index], ...updatedZone };
-            }
-        } else {
-            const newZone = await $api<Zone>(apiUrl, { method: apiMethod, body: formData });
-            zones.value.push(newZone);
-        }
-        closeFormModal();
-    } catch (error: any) {
-        errorMessage.value = error?.data?.message || `Unable to ${isEditMode.value ? 'update' : 'add'} zone.`;
-    } finally {
-        isSubmitting.value = false;
-    }
+    actionError.value = null;
+    nextTick(() => { zoneToDelete.value = null; });
 };
 
 const confirmDelete = async () => {
     if (!zoneToDelete.value) return;
     deleting.value = true;
-    errorMessage.value = null;
+    actionError.value = null;
     try {
-        await $api(`/zones/${zoneToDelete.value.id}`, { method: 'DELETE' });
-        zones.value = zones.value.filter((z) => z.id !== zoneToDelete.value!.id);
+        await api.zones.delete(zoneToDelete.value.id);
+        await refresh();
         cancelDelete();
-    } catch (error: any) {
-        errorMessage.value =
-            error?.data?.message || `Unable to delete zone ${zoneToDelete.value.name}. It may have linked sensors/cameras.`;
+        Swal.fire({
+            toast: true,
+            icon: 'success',
+            title: 'Zone deleted!',
+        });
+    } catch (err: any) {
+        actionError.value = err.data?.message || `Unable to delete zone. It may have linked items.`;
     } finally {
         deleting.value = false;
     }
 };
-
-onMounted(() => {
-    fetchZones();
-});
 </script>
+
+<style scoped>
+.error-alert { 
+    @apply bg-red-800 text-red-200 p-4 rounded-md mb-4 flex items-center;
+}
+.btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+}
+.btn-secondary {
+    @apply bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500;
+}
+</style>

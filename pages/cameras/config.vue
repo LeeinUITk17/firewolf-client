@@ -2,7 +2,8 @@
     <div class="p-4 sm:p-6 lg:p-8">
         <div class="mb-6 pb-3 border-b border-gray-700">
             <NuxtLink to="/cameras" class="text-sm text-orange-400 hover:underline flex items-center mb-1">
-                <ArrowLeftIcon class="h-4 w-4 mr-1" /> Back to Camera List
+                <ArrowLeftIcon class="h-4 w-4 mr-1" />
+                Back to Camera List
             </NuxtLink>
             <h1 class="text-2xl font-semibold text-white mt-1">
                 {{ pageTitle }}
@@ -12,17 +13,17 @@
             </p>
         </div>
 
-        <div v-if="loading" class="text-center py-16">
+        <div v-if="pending" class="text-center py-16">
             <AppSpinner class="w-8 h-8 inline-block" />
             <p class="text-gray-400 mt-2">{{ loadingMessage }}</p>
         </div>
 
-        <div v-else-if="errorMessage" class="error-alert mb-6 flex justify-between items-center">
+        <div v-else-if="error" class="error-alert mb-6 flex justify-between items-center">
             <div class="flex items-center">
                 <XCircleIcon class="h-5 w-5 mr-2 flex-shrink-0" />
-                <span>{{ errorMessage }}</span>
+                <span>Failed to load required data.</span>
             </div>
-            <button @click="reloadData" class="text-sm font-medium text-orange-300 hover:underline">Retry</button>
+            <button @click="refresh()" class="text-sm font-medium text-orange-300 hover:underline">Retry</button>
         </div>
 
         <div v-else class="max-w-2xl bg-gray-850 p-6 md:p-8 rounded-lg border border-gray-700 shadow-md">
@@ -39,13 +40,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useNuxtApp, navigateTo } from '#app';
+import { ref, computed } from 'vue';
+import { useRoute, navigateTo, useAsyncData } from '#app';
+import { useApi } from '~/composables/useApi';
 import CamerasCameraForm from '~/components/cameras/CameraForm.vue';
 import AppSpinner from '~/components/ui/AppSpinner.vue';
 import { ArrowLeftIcon, XCircleIcon } from '@heroicons/vue/20/solid';
-import type { Camera, Zone } from '~/types/api';
-import type { $Fetch } from 'ofetch';
+import type { Camera } from '~/types/api';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
@@ -54,83 +55,45 @@ definePageMeta({
     middleware: ['auth'],
 });
 
+const api = useApi();
 const route = useRoute();
-const nuxtApp = useNuxtApp();
-const $api = nuxtApp.$api as $Fetch;
-
 const cameraId = computed(() => route.query.edit as string | undefined);
 const isEditMode = computed(() => !!cameraId.value);
 
-const cameraData = ref<Camera | null>(null);
-const availableZones = ref<Pick<Zone, 'id' | 'name'>[]>([]);
-const loading = ref(true);
 const isSubmitting = ref(false);
-const errorMessage = ref<string | null>(null);
 const submitError = ref<string | null>(null);
 
+const { data, pending, error, refresh } = useAsyncData(
+    'camera-config-data',
+    async () => {
+        const fetchZonesPromise = api.zones.getAll({ fields: 'id,name', limit: 1000 });
+        const fetchCameraPromise = isEditMode.value
+            ? api.cameras.getById(cameraId.value!)
+            : Promise.resolve(null);
+        const [zones, camera] = await Promise.all([fetchZonesPromise, fetchCameraPromise]);
+        return { zones, camera };
+    },
+    { server: false, lazy: true }
+);
+
+const availableZones = computed(() => data.value?.zones || []);
+const cameraData = computed(() => data.value?.camera || null);
+
 const pageTitle = computed(() => (isEditMode.value ? 'Edit Camera' : 'Add New Camera'));
-const loadingMessage = computed(() => (isEditMode.value ? 'Loading camera data...' : 'Loading zones data...'));
-
-const fetchZones = async () => {
-    try {
-        const zones = await $api<Pick<Zone, 'id' | 'name'>[]>('/zones', {
-            params: { fields: 'id,name', limit: 1000 },
-        });
-        availableZones.value = zones || [];
-    } catch (error: any) {
-        console.error('Failed to fetch zones:', error);
-        availableZones.value = [];
-        throw new Error(error?.data?.message || 'Unable to load zones.');
-    }
-};
-
-const fetchCameraData = async () => {
-    if (!isEditMode.value || !cameraId.value) return;
-    try {
-        cameraData.value = await $api<Camera>(`/cameras/${cameraId.value}`);
-    } catch (error: any) {
-        console.error(`Failed to fetch camera ${cameraId.value}:`, error);
-        cameraData.value = null;
-        throw new Error(error?.data?.message || 'Unable to load camera data.');
-    }
-};
-
-const reloadData = async () => {
-    loading.value = true;
-    errorMessage.value = null;
-    submitError.value = null;
-    cameraData.value = null;
-
-    try {
-        const results = await Promise.allSettled([
-            fetchZones(),
-            isEditMode.value ? fetchCameraData() : Promise.resolve(),
-        ]);
-
-        const zoneError = results[0].status === 'rejected' ? results[0].reason?.message : null;
-        const cameraError = results[1]?.status === 'rejected' ? results[1].reason?.message : null;
-
-        if (zoneError || cameraError) {
-            errorMessage.value = [zoneError, cameraError].filter(Boolean).join(' ');
-        }
-    } catch (error) {
-        console.error('Unexpected error during reloadData:', error);
-        errorMessage.value = 'Unexpected error while loading data.';
-    } finally {
-        loading.value = false;
-    }
-};
+const loadingMessage = computed(() => (isEditMode.value ? 'Loading camera data...' : 'Loading required data...'));
 
 const handleSubmit = async (formData: Partial<Camera>) => {
     isSubmitting.value = true;
     submitError.value = null;
-    const apiUrl = isEditMode.value ? `/cameras/${cameraId.value}` : '/cameras';
-    const apiMethod = isEditMode.value ? 'PATCH' : 'POST';
     const successMessage = isEditMode.value ? 'Camera updated successfully!' : 'Camera added successfully!';
     const failureMessage = `Error while ${isEditMode.value ? 'updating' : 'adding'} camera.`;
 
     try {
-        await $api<Camera>(apiUrl, { method: apiMethod, body: formData });
+        if (isEditMode.value && cameraId.value) {
+            await api.cameras.update(cameraId.value, formData);
+        } else {
+            await api.cameras.create(formData);
+        }
 
         Swal.fire({
             icon: 'success',
@@ -144,20 +107,14 @@ const handleSubmit = async (formData: Partial<Camera>) => {
             customClass: { popup: 'swal2-dark' },
         });
 
-        setTimeout(() => {
-            navigateTo('/cameras');
-        }, 1500);
-    } catch (error: any) {
-        console.error(`Failed to ${isEditMode.value ? 'update' : 'create'} camera:`, error);
-        submitError.value = error?.data?.message || failureMessage;
+        setTimeout(() => navigateTo('/cameras'), 1500);
+
+    } catch (err: any) {
+        submitError.value = err.data?.message || failureMessage;
     } finally {
         isSubmitting.value = false;
     }
 };
-
-onMounted(() => {
-    reloadData();
-});
 </script>
 
 <style scoped>
